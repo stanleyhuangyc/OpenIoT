@@ -6,8 +6,8 @@
 #include "esp8266.h"
 #include "SoftwareSerial.h"
 
-#define ssid		"HOMEWIFI"		// you need to change it 
-#define password	"862150909018"
+#define ssid		"MYWIFI"		// you need to change it 
+#define password	"MYPASSWORD"
 
 #define serverIP	"192.168.0.2"
 #define	serverPort	"8081"
