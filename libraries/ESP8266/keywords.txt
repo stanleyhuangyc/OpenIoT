@@ -19,7 +19,7 @@ resetEsp8266		KEYWORD2
 debugPrintln		KEYWORD2
 setSingleConnect	KEYWORD2
 setMultiConnect		KEYWORD2
-connectTCPServer	KEYWORD2
+connect			KEYWORD2
 checkMessage		KEYWORD2
 getMessage			KEYWORD2
 setState			KEYWORD2
