@@ -112,9 +112,7 @@ int IncomingUDPCallback(void* _hp)
 		return -1;
 
 	buf[n] = 0;
-	DBG("UDP (%u.%u.%u.%u): %s\n",
-		cliaddr.sin_addr.S_un.S_un_b.s_b1, cliaddr.sin_addr.S_un.S_un_b.s_b2, cliaddr.sin_addr.S_un.S_un_b.s_b3, cliaddr.sin_addr.S_un.S_un_b.s_b4,
-		buf);
+	DBG("Sensor Data: %s\n", buf);
 
 	for (s = strtok(buf, ","), n = 0; s && n < MAX_PIDS; s = strtok(0, ","), n++) {
 		data[n] = (float)atof(s);
