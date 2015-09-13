@@ -3,8 +3,8 @@ CFLAGS=-O3 -Wunused-result
 HTTPOBJ = httppil.o http.o httppost.o httpauth.o
 HEADERS = httpint.h httpapi.h httpxml.h
 ifndef TARGET
-TARGET = Mini IoT Server
-HTTPOBJ += Mini IoT Server.o
+TARGET = iotserver
+HTTPOBJ += iotserver.o
 endif
 
 DEFINES=
