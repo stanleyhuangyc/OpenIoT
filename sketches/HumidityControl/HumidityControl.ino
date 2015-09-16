@@ -4,8 +4,8 @@
 U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE);
 blunoAccessory myAccessory;
 
-#define THRESHOLD_OFF 35
-#define THRESHOLD_ON 33
+#define THRESHOLD_OFF 29
+#define THRESHOLD_ON 27
 
 bool on = false;
 
@@ -32,7 +32,7 @@ void loop() {
     sprintf(buf, "Humidity:%d%%", (int)h);
     u8g.drawStr(0,22,buf);
     sprintf(buf, "Temperature:%dC", (int)t);
-    u8g.drawStr(2,22,buf);
+    u8g.drawStr(0,44,buf);
   } while(u8g.nextPage());
 
   if (on) {
