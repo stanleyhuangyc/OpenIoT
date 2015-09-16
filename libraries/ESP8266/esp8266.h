@@ -23,8 +23,8 @@ public:
 	void begin(Stream *serial,Stream *serialDebug);
 	void comSend();
 	bool connectAP(String ssid, String password);
-	bool checkEsp8266();
-	bool resetEsp8266();
+	bool check();
+	bool reset();
 	void debugPrintln(String str);
 	bool setSingleConnect();
 	bool setMultiConnect();

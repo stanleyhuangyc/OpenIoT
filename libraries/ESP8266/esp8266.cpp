@@ -69,7 +69,7 @@ void Esp8266::write(String str) {
 	 flush();  /*wait the data send ok, clear send_buf*/
 }
 
-bool Esp8266::checkEsp8266() {
+bool Esp8266::check() {
 	bool isOK=false;
 	clearBuf();
 	write("AT");
@@ -114,7 +114,7 @@ bool Esp8266::setMode(char mode) {
 	if (str.indexOf("no change") > 0)
 		return true;
 	else {
-		if (resetEsp8266()) {
+		if (reset()) {
 			this->wifiMode = mode;
 			return true;
 		}
@@ -146,7 +146,7 @@ char Esp8266::checkMode() {
 		return '0';
 }
 
-bool Esp8266::resetEsp8266() {
+bool Esp8266::reset() {
 
 	unsigned long timeout = 7000;
 	unsigned long t_start = 0;
