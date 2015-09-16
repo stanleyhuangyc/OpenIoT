@@ -271,6 +271,9 @@ int main(int argc,char* argv[])
 	InitSocket();
 
 	printf("Host: %s:%d\n", GetLocalAddrString(), httpParam.httpPort);
+	if (httpParam.udpPort) {
+		printf("UDP Port: %d\n", httpParam.udpPort);
+	}
 	printf("Web root: %s\n",httpParam.pchWebPath);
 	printf("Max clients (per IP): %d (%d)\n",httpParam.maxClients, httpParam.maxClientsPerIP);
 	if (httpParam.flags & FLAG_DIR_LISTING) printf("Dir listing enabled\n");
