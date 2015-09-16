@@ -107,16 +107,23 @@ int IncomingUDPCallback(void* _hp)
 	char buf[1024];
 	int n;
 	char *s;
+	char* hostaddr;
 
 	if ((n = recvfrom(hp->udpSocket, buf, sizeof(buf), 0, (struct sockaddr *)&cliaddr, &len)) <= 0)
 		return -1;
 
 	buf[n] = 0;
-	DBG("Sensor Data: %s\n", buf);
+
+	hostaddr = inet_ntoa(cliaddr.sin_addr);
+
+	printf("Sensor Data (%s): %s\n", hostaddr, buf);
 
 	for (s = strtok(buf, ","), n = 0; s && n < MAX_PIDS; s = strtok(0, ","), n++) {
 		data[n] = (float)atof(s);
 	}
+
+	n = sprintf(buf, "%u OK", (unsigned int)data[0]);
+	n = sendto(hp->udpSocket, buf, n, 0, (struct sockaddr *)&cliaddr, len);	
 	return 0;
 }
 
