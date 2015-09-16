@@ -135,13 +135,13 @@ int uhSensors(UrlHandlerParam* param)
 	\"sensors\":[\r\n\
 	{\r\n\
 		\"id\":\"%u\",\r\n\
-		\"value\":\"%f\"\",\r\n\
-		\"time\":\"%u\"\",\r\n\
+		\"value\":\"%f\",\r\n\
+		\"time\":\"%u\",\r\n\
 	},\r\n\
 	{\r\n\
 		\"id\":\"%u\",\r\n\
-		\"value\":\"%f\"\",\r\n\
-		\"time\":\"%u\"\",\r\n\
+		\"value\":\"%f\",\r\n\
+		\"time\":\"%u\",\r\n\
 	}\r\n\
 	]\r\n}", 1, data[1], (unsigned int)data[0], 2, data[2], (unsigned int)data[0]);
 	return FLAG_DATA_RAW;
@@ -204,7 +204,8 @@ int main(int argc,char* argv[])
 	//fill in default settings
 	mwInitParam(&httpParam);
 	httpParam.maxClients=32;
-	httpParam.httpPort = 80;
+	httpParam.httpPort = 8080;
+	httpParam.udpPort = 8081;
 	GetFullPath(httpParam.pchWebPath, argv[0], "htdocs");
 	httpParam.pxAuthHandler = authHandlerList;
 	httpParam.pxUrlHandler=urlHandlerList;
