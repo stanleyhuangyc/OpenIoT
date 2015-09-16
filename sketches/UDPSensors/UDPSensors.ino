@@ -16,12 +16,12 @@ dht11 DHT;
 #define SENSE_INTERVAL 1000 /* ms */
 
 void setup() {
-	
 	delay(2000);				// it will be better to delay 2s to wait esp8266 module OK
 	Serial.begin(115200);
 	Serial1.begin(115200);
-        while (!Serial);
+
 	wifi.begin(&Serial1, &Serial);
+	wifi.reset();
     	wifi.debugPrintln("Connecting...");
 
         for (;;) {
