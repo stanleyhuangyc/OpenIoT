@@ -1,22 +1,26 @@
 
 /*
-* Getting Started example sketch for nRF24L01+ radios
-* This is a very basic example of how to send data from one node to another
-* Updated: Dec 2014 by TMRh20
+* This sketch receives data from data sender
+*
+* Written by Stanley Huang for Project OpenIoT
 */
 
 #include <SPI.h>
 #include "RF24.h"
 
-/* Hardware configuration: Set up nRF24L01 radio on SPI bus plus pins 7 & 8 */
-RF24 radio(7,8);
+/* Hardware configuration: Set up nRF24L01 radio on SPI bus plus pins 9 & 10 */
+RF24 radio(9,10);
 /**********************************************************/
 
 byte addresses[][6] = {"SNDER","RCVER"};
 
 typedef struct {
   byte id;
-  unsigned long time;  
+  unsigned long time;
+  int temperature;
+  int humidity;
+  unsigned int voltage;
+  int current;
 } DATA_BLOCK;
 
 void setup() {
@@ -41,13 +45,24 @@ void setup() {
 void loop() {
     if( radio.available()){
       while (radio.available()) {                                   // While there is data ready
-        DATA_BLOCK data;
-        radio.read( &data, sizeof(data) );             // Get the payload
+        DATA_BLOCK data = {0};
+        radio.read( &data, sizeof(data));
         Serial.print('[');
         Serial.print(data.id);
         Serial.print(']');
-        Serial.println(data.time);
+        Serial.print(data.time);
+        if (data.temperature || data.humidity || data.voltage) {
+          Serial.print(' ');
+          Serial.print((float)data.temperature / 10, 1);
+          Serial.print("C ");
+          Serial.print((float)data.humidity / 10, 1);
+          Serial.print("% ");
+          Serial.print((float)data.voltage / 100, 1);
+          Serial.print("V ");
+          Serial.print((float)data.current / 100, 2);
+          Serial.print('A');
+        }
+        Serial.println();
       }
  }
-} // Loop
-
+}
