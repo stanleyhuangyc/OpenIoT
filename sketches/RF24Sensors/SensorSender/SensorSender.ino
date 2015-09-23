@@ -15,6 +15,7 @@
 #define DHT11_PIN 8
 #define CURRENT_PIN A0
 #define VOLTAGE_PIN A1
+#define START_VOLTAGE 10
 
 /* Set up nRF24L01 radio on SPI bus plus pins 9 & 10 */
 RF24 radio(9,10);
@@ -40,15 +41,35 @@ void getVoltAmp(float& v, float& a)
   int an = 0;
 
   for (byte n = 0; n < 10; n++) {
-    vn += analogRead(CURRENT_PIN);
-    an += analogRead(VOLTAGE_PIN);
+    vn += analogRead(VOLTAGE_PIN);
+    an += analogRead(CURRENT_PIN);
     delay(100);
   }
   v = (float)vn / 10 / 1024 * WORKING_VOLTAGE * 5;
   a = (float)an / 10 / 1024 * WORKING_VOLTAGE;
 }
 
+float getVoltage()
+{
+  int vn = 0;
+  for (byte n = 0; n < 10; n++) {
+    vn += analogRead(VOLTAGE_PIN);
+    delay(100);
+  }
+  return (float)vn / 10 / 1024 * WORKING_VOLTAGE * 5;
+}
+
 void setup() {
+  pinMode(13, OUTPUT);
+  digitalWrite(13, HIGH);
+  // start when voltage above requirement
+  for (;;) {
+    float v = getVoltage();
+    if (v >= START_VOLTAGE) break;
+    delay(2000);
+  }
+  digitalWrite(13, LOW);
+
   radio.begin();
 
   // Set the PA Level low to prevent power supply related issues since this is a
@@ -62,7 +83,6 @@ void setup() {
 
 void loop() {
   DATA_BLOCK data = {DEV_ID, millis()};
-
   float v;
   float a;
   getVoltAmp(v, a);
@@ -75,5 +95,5 @@ void loop() {
 
   radio.write( &data, sizeof(data));
 
-  delay(2000);
+  delay(4000);
 }
