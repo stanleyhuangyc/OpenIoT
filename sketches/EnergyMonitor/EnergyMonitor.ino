@@ -5,8 +5,9 @@
 LCD_ILI9341 lcd;
 
 #define PV_INPUTS 6
+#define CURRENT_SENSOR_RATIO 0.067
 
-uint16_t amp = 50; /* 1/10A */
+float amp = 0; /* A */
 uint16_t voltage = 240; /* V */
 float watt = 0;
 float wh = 0; /* watt hour */
@@ -24,15 +25,15 @@ typedef struct {
   uint16_t pos;
 } CHART_DATA;
 
-void chartUpdate(CHART_DATA* chart, int value);
+void chartUpdate(CHART_DATA* chart, unsigned int value);
 
-CHART_DATA chartRPM = {24, 319, 239, 100, 24};
+CHART_DATA chartPower = {24, 319, 239, 100, 24};
 
-void chartUpdate(CHART_DATA* chart, int value)
+void chartUpdate(CHART_DATA* chart, unsigned int value)
 {
   if (value > chart->height) value = chart->height;
-  for (uint16_t n = 0; n < value; n++) {
-    byte b = n * 255 / chart->height;
+  for (unsigned int n = 0; n < value; n++) {
+    uint8_t b = n * 255 / chart->height;
     lcd.setPixel(chart->pos, chart->bottom - n, RGB16(0, 0, b));
   }
   if (chart->pos++ == chart->right) {
@@ -88,13 +89,6 @@ void initScreen()
     lcd.setColor(RGB16_WHITE);
 }
 
-void showChart(int value)
-{
-    uint16_t height;
-    height = value / 20;
-    chartUpdate(&chartRPM, height);
-}
-
 void updateMeters()
 {
   lcd.setFontSize(FONT_SIZE_XLARGE);
@@ -106,12 +100,13 @@ void updateMeters()
   lcd.setCursor(0, 11);
   lcd.printInt(voltage, 4);
   lcd.setCursor(110, 11);
-  lcd.printInt(amp / 10, 2);
+  int a = (int)(amp * 10);
+  lcd.printInt(a / 10, 2);
   lcd.setFontSize(FONT_SIZE_SMALL);
   lcd.write('\n');
   lcd.setFontSize(FONT_SIZE_MEDIUM);
   lcd.write('.');
-  lcd.printInt(amp % 10);
+  lcd.printInt(a % 10);
    
   lcd.setFontSize(FONT_SIZE_SMALL);
   lcd.setFlags(FLAG_PAD_ZERO);
@@ -137,11 +132,12 @@ void updateMeters()
     lcd.printInt(pvs[n] % 60, 2);
   }
   lcd.setFlags(0);
-  showChart(watt);
+  chartUpdate(&chartPower, watt / 20);
 }
 
 void setup() {
-  // put your setup code here, to run once:
+  analogReference(INTERNAL);
+
   lcd.begin();
   initScreen();
   updateMeters();
@@ -153,13 +149,26 @@ void calculate()
 {
   static uint32_t lastTime = 0;
   
-  watt = (float)voltage * amp / 10;
   uint32_t t = millis();
   wh += watt * (t - lastTime) / 3600000;
   lastTime = t;
   for (byte n = 0; n < 4; n++) {
     pvs[n] = millis() / 1000;
   }
+}
+
+void sensorPower()
+{
+  uint32_t an = 0;
+  float pn = 0;
+  for (int m = 0; m < 1000; m++) {
+    int a = analogRead(A2);
+    an += (uint32_t)a * a;
+    pn += (a * CURRENT_SENSOR_RATIO) * voltage;
+    delay(1);
+  }
+  amp = sqrt((float)an / 500) * CURRENT_SENSOR_RATIO;
+  watt = amp <= 0.05 ? 0 : pn / 500;
 }
 
 void loop() {
@@ -170,11 +179,16 @@ void loop() {
     lastTime = millis();
   }
   if (Serial.available()) {
+     // amp adjuster
      char c = Serial.read();
-     if (c == ',')
-       amp --;
-     else if (c == '.')
-       amp ++;
+     if (c == ',') {
+       amp -= 0.1;
+       watt -= voltage / 10;
+     } else if (c == '.') {
+       amp += 0.1;
+       watt += voltage / 10;
+     }
   }
+  sensorPower();
   calculate();
 }
