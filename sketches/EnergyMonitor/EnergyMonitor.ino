@@ -1,3 +1,9 @@
+/*
+  Energy Monitor Sketch for Arduino/Bluno
+  Developed by Stanley Huang for Open IoT Project
+  Distributed under GPL V3
+*/
+
 #include <Arduino.h>
 #include <SPI.h>
 #include <MultiLCD.h>
