@@ -4,13 +4,16 @@
 
 LCD_ILI9341 lcd;
 
+#define PIN_CURRENT_SENSOR A2
 #define PV_INPUTS 6
 #define CURRENT_SENSOR_RATIO 0.067
 
 float amp = 0; /* A */
-uint16_t voltage = 240; /* V */
+uint16_t voltage = 240; /* V (voltage isn't measured yet) */
 float watt = 0;
 float wh = 0; /* watt hour */
+
+// fake PV data (will implement wireless sensoring of PV output)
 float pvv[PV_INPUTS] = {28.9, 27.5, 28.1, 26.9};
 float pva[PV_INPUTS] = {1.5, 2.1, 3.1, 2.9};
 int pvt[PV_INPUTS] = {35, 34, 36, 35};
@@ -41,7 +44,6 @@ void chartUpdate(CHART_DATA* chart, unsigned int value)
   }
   lcd.fill(chart->pos, chart->pos, 239 - chart->height, chart->bottom);
 }
-
 
 void initScreen()
 {
@@ -89,7 +91,7 @@ void initScreen()
     lcd.setColor(RGB16_WHITE);
 }
 
-void updateMeters()
+void updateMeterDisplay()
 {
   lcd.setFontSize(FONT_SIZE_XLARGE);
   lcd.setColor(RGB16_WHITE);
@@ -135,14 +137,39 @@ void updateMeters()
   chartUpdate(&chartPower, watt / 20);
 }
 
+void serialOutput()
+{
+  if (watt >= 1000) {
+    Serial.print(watt / 1000, 1);
+    Serial.print("kW ");
+  } else {
+    Serial.print((int)watt);
+    Serial.print("W ");
+  }
+  if (wh >= 10000) {
+    Serial.print((unsigned int)(wh / 1000));
+    Serial.print("kWh ");
+  } else {
+    Serial.print((unsigned int)wh);
+    Serial.print("Wh ");
+  }
+  Serial.print((unsigned int)voltage);
+  Serial.print("V ");
+  Serial.print(amp, 1);
+  Serial.print("A");
+}
+
 void setup() {
+  // set analog reference voltage to internal 1.1V
+  // as we are going to measure very small voltage
   analogReference(INTERNAL);
 
+  // initialize LCD module
   lcd.begin();
+  // illustrate UI
   initScreen();
-  updateMeters();
   
-  Serial.begin(57600);
+  Serial.begin(115200);
 }
 
 void calculate()
@@ -162,7 +189,7 @@ void sensorPower()
   uint32_t an = 0;
   float pn = 0;
   for (int m = 0; m < 1000; m++) {
-    int a = analogRead(A2);
+    int a = analogRead(PIN_CURRENT_SENSOR);
     an += (uint32_t)a * a;
     pn += (a * CURRENT_SENSOR_RATIO) * voltage;
     delay(1);
@@ -175,11 +202,12 @@ void loop() {
   // put your main code here, to run repeatedly:
   static uint32_t lastTime = 0;
   if (millis() - lastTime > 1000) {
-    updateMeters();
+    updateMeterDisplay();
+    serialOutput();
     lastTime = millis();
   }
   if (Serial.available()) {
-     // amp adjuster
+     // fake data adjuster
      char c = Serial.read();
      if (c == ',') {
        amp -= 0.1;
