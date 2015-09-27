@@ -9,7 +9,7 @@
 
 #include <SPI.h>
 #include <RF24.h>
-#include <dht.h>
+#include <dht11.h>
 
 #define DEV_ID 4
 #define DHT11_PIN 8
@@ -22,17 +22,18 @@ RF24 radio(9,10);
 
 byte addresses[][6] = {"SNDER","RCVER"};
 
-dht DHT;
+dht11 DHT;
 
 #define WORKING_VOLTAGE 4.95
 
 typedef struct {
   byte id;
   unsigned long time;
-  int temperature;
-  int humidity;
-  unsigned int voltage;
-  int current;
+  int temperature; /* 0.1C */
+  unsigned int humidity; /* 0.1% */
+  unsigned int voltage; /* 1/100V */
+  int current; /* 1/100A */
+  int watt; /* W */
 } DATA_BLOCK;
 
 void getVoltAmp(float& v, float& a)
@@ -88,7 +89,8 @@ void loop() {
   getVoltAmp(v, a);
   data.voltage = (unsigned int)(v * 100);
   data.current = (int)(a * 100);  
-  if (DHT.read11(DHT11_PIN) == DHTLIB_OK) {
+  data.watt = (int)(a * v);
+  if (DHT.read(DHT11_PIN) == DHTLIB_OK) {
     data.temperature = (int)(DHT.temperature * 10);
     data.humidity = (int)(DHT.humidity * 10);
   }
