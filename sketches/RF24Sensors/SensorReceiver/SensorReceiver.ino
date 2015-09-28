@@ -17,10 +17,11 @@ byte addresses[][6] = {"SNDER","RCVER"};
 typedef struct {
   byte id;
   unsigned long time;
-  int temperature;
-  int humidity;
-  unsigned int voltage;
-  int current;
+  int temperature; /* 0.1C */
+  unsigned int humidity; /* 0.1% */
+  unsigned int voltage; /* 1/100V */
+  int current; /* 1/100A */
+  int watt; /* W */
 } DATA_BLOCK;
 
 void setup() {
@@ -50,17 +51,21 @@ void loop() {
         Serial.print('[');
         Serial.print(data.id);
         Serial.print(']');
-        Serial.print(data.time);
-        if (data.temperature || data.humidity || data.voltage) {
+        Serial.print(data.time / 1000);
+        if (data.voltage || data.current) {
           Serial.print(' ');
-          Serial.print((float)data.temperature / 10, 1);
-          Serial.print("C ");
-          Serial.print((float)data.humidity / 10, 1);
-          Serial.print("% ");
           Serial.print((float)data.voltage / 100, 1);
           Serial.print("V ");
           Serial.print((float)data.current / 100, 2);
-          Serial.print('A');
+          Serial.print("A ");
+          Serial.print(data.watt ? (float)data.watt / 10 : (float)data.voltage * data.current / 10000, 1);
+          Serial.print("W ");
+        }
+        if (data.temperature || data.humidity) {
+          Serial.print((float)data.temperature / 10, 1);
+          Serial.print("C ");
+          Serial.print((float)data.humidity / 10, 1);
+          Serial.print("%");
         }
         Serial.println();
       }
