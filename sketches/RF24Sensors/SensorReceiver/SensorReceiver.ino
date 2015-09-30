@@ -6,7 +6,7 @@
 */
 
 #include <SPI.h>
-#include "RF24.h"
+#include <RF24.h>
 
 /* Hardware configuration: Set up nRF24L01 radio on SPI bus plus pins 9 & 10 */
 RF24 radio(9,10);
@@ -21,7 +21,7 @@ typedef struct {
   unsigned int humidity; /* 0.1% */
   unsigned int voltage; /* 1/100V */
   int current; /* 1/100A */
-  int watt; /* W */
+  int watt; /* 1/10W */
 } DATA_BLOCK;
 
 void setup() {
@@ -44,30 +44,43 @@ void setup() {
 }
 
 void loop() {
-    if( radio.available()){
-      while (radio.available()) {                                   // While there is data ready
-        DATA_BLOCK data = {0};
-        radio.read( &data, sizeof(data));
-        Serial.print('[');
-        Serial.print(data.id);
-        Serial.print(']');
-        Serial.print(data.time / 1000);
-        if (data.voltage || data.current) {
-          Serial.print(' ');
-          Serial.print((float)data.voltage / 100, 1);
-          Serial.print("V ");
-          Serial.print((float)data.current / 100, 2);
-          Serial.print("A ");
-          Serial.print(data.watt ? (float)data.watt / 10 : (float)data.voltage * data.current / 10000, 1);
-          Serial.print("W ");
-        }
-        if (data.temperature || data.humidity) {
-          Serial.print((float)data.temperature / 10, 1);
-          Serial.print("C ");
-          Serial.print((float)data.humidity / 10, 1);
-          Serial.print("%");
-        }
-        Serial.println();
+  if( radio.available()){
+    while (radio.available()) {                                   // While there is data ready
+      DATA_BLOCK data = {0};
+      radio.read( &data, sizeof(data));
+      Serial.print('[');
+      Serial.print(data.id);
+      Serial.print(']');
+      uint32_t s = data.time / 1000;
+      if (s >= 3600) {
+        Serial.print(s / 3600);
+        Serial.print(':');
+        s %= 3600;
       }
- }
+      int m = s / 60;
+      s %= 60;
+      if (m < 10) Serial.print('0');
+      Serial.print(m);
+      Serial.print(':');
+      if (s < 10) Serial.print('0');
+      Serial.print(s);
+      if (data.voltage || data.current) {
+        Serial.print(' ');
+        Serial.print(data.watt ? (float)data.watt / 10 : (float)data.voltage * data.current / 10000, 1);
+        Serial.print("W ");
+        Serial.print((float)data.current / 100, 2);
+        Serial.print("A ");
+        Serial.print((float)data.voltage / 100, 1);
+        Serial.print("V ");
+        delay(20);
+      }
+      if (data.temperature || data.humidity) {
+        Serial.print((float)data.temperature / 10, 1);
+        Serial.print("C ");
+        Serial.print((float)data.humidity / 10, 1);
+        Serial.print("%");
+      }
+      Serial.println();
+    }
+  }
 }
