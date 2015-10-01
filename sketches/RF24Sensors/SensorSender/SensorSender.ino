@@ -9,7 +9,7 @@
 
 #include <SPI.h>
 #include <RF24.h>
-#include <dht11.h>
+#include <DHT.h>
 
 #define DEV_ID 4
 #define DHT11_PIN 8
@@ -22,7 +22,7 @@ RF24 radio(9,10);
 
 byte addresses[][6] = {"SNDER","RCVER"};
 
-dht11 DHT;
+DHT dht(DHT11_PIN, DHT11);
 
 #define WORKING_VOLTAGE 4.95
 
@@ -90,10 +90,8 @@ void loop() {
   data.voltage = (unsigned int)(v * 100);
   data.current = (int)(a * 100);  
   data.watt = (int)(a * v);
-  if (DHT.read(DHT11_PIN) == DHTLIB_OK) {
-    data.temperature = (int)(DHT.temperature * 10);
-    data.humidity = (int)(DHT.humidity * 10);
-  }
+  data.temperature = (int)(dht.readTemperature() * 10);
+  data.humidity = (int)(dht.readHumidity() * 10);
 
   radio.write( &data, sizeof(data));
 
