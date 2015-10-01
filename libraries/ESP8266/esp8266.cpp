@@ -93,7 +93,7 @@ int Esp8266::read() {
 }
 
 String Esp8266::readData() {
-	unsigned long timeout = 100;
+	unsigned long timeout = 1000;
 	unsigned long t = millis();
     String data = "";
     while(millis() - t < timeout) {
@@ -342,6 +342,24 @@ bool Esp8266::sendMessage(int index, String str) {
 	tmp = readData();
 	i = tmp.length();
 	if (tmp.substring(i-9, i-2) == "SEND OK") {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void Esp8266::sendStart(int len)
+{
+	this->serial->print("AT+CIPSEND=");
+	this->serial->println(len);
+	delay(20);
+}
+
+bool Esp8266::sendEnd()
+{
+	String result = readData();
+	byte index = result.length();
+	if (result.substring(index-9, index-2) == "SEND OK") {
 		return true;
 	} else {
 		return false;

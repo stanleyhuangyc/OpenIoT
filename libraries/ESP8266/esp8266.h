@@ -35,12 +35,15 @@ public:
 	int getState();	
 	bool sendMessage(String str);
 	bool sendMessage(int index, String str);
+	void sendStart(int len);
+	bool sendEnd();
 	int getWorkingID(); 
 	int getFailConnectID();
 	bool openTCPServer(int port, int timeout);
 	bool enableAP(String ssid, String password);
 	String getIP();
 	bool setPureDataMode();
+	Stream *serial;                                            
 
 private:
 	int available();
@@ -53,9 +56,6 @@ private:
 	char checkMode();	
 	bool setMux(int flag);
 
-
-private:
-	Stream *serial;                                            
 	Stream *serialDebug;
 	byte connectID;
 	byte workingID;
