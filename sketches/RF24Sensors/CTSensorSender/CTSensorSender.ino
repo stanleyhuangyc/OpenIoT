@@ -26,7 +26,7 @@ typedef struct {
   unsigned int humidity; /* 0.1% */
   unsigned int voltage; /* 1/100V */
   int current; /* 1/100A */
-  int watt; /* 1/10W */
+  unsigned int watt; /* W */
 } DATA_BLOCK;
 
 DATA_BLOCK data = {DEV_ID};
@@ -72,7 +72,7 @@ void loop() {
   data.time = millis();
   data.current = amp * 100;
   data.voltage = volt * 100;
-  data.watt = watt * 10;
+  data.watt = watt;
 
   // send data block
   radio.write( &data, sizeof(data));

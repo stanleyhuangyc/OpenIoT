@@ -31,7 +31,7 @@ typedef struct {
   unsigned int humidity; /* 0.1% */
   unsigned int voltage; /* 1/100V */
   int current; /* 1/100A */
-  int watt; /* 1/10W */
+  unsigned int watt; /* W */
 } DATA_BLOCK;
 
 void sendData(DATA_BLOCK* data);
@@ -100,7 +100,7 @@ void sendData(DATA_BLOCK* data)
   bytes += serial->print(",\n");
 
   bytes += serial->print("\"watt\":");
-  bytes += serial->print((float)data->watt / 10, 1);
+  bytes += serial->print(data->watt, 1);
   bytes += serial->print("}\n");
 
   bytes += serial->print("\"current\":");
@@ -154,8 +154,10 @@ void receiveRemoteSensors()
       Serial.print(s);
       if (data.voltage || data.current) {
         Serial.print(' ');
-        Serial.print(data.watt ? (float)data.watt / 10 : (float)data.voltage * data.current / 10000, 1);
-        Serial.print("W ");
+        if (data.watt) {
+          Serial.print(data.watt);
+          Serial.print("W ");
+        }
         Serial.print((float)data.current / 100, 2);
         Serial.print("A ");
         Serial.print((float)data.voltage / 100, 1);

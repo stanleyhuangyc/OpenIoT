@@ -21,7 +21,7 @@ typedef struct {
   unsigned int humidity; /* 0.1% */
   unsigned int voltage; /* 1/100V */
   int current; /* 1/100A */
-  int watt; /* 1/10W */
+  unsigned int watt; /* 10W */
 } DATA_BLOCK;
 
 void setup() {
@@ -66,8 +66,10 @@ void loop() {
       Serial.print(s);
       if (data.voltage || data.current) {
         Serial.print(' ');
-        Serial.print(data.watt ? (float)data.watt / 10 : (float)data.voltage * data.current / 10000, 1);
-        Serial.print("W ");
+        if (data.watt) {
+          Serial.print(data.watt);
+          Serial.print("W ");
+        }
         Serial.print((float)data.current / 100, 2);
         Serial.print("A ");
         Serial.print((float)data.voltage / 100, 1);
