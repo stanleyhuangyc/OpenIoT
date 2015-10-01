@@ -1,7 +1,6 @@
 
 /*
-* This sketch senses temperature/humidity with a DHT11 module
-* and senses AC current with SCT-013 CT sensor
+* This sketch measures AC current with SCT-013 CT sensor
 * and transmit data via a nRF24L01 module on SPI
 *
 * Written by Stanley Huang for Project OpenIoT
@@ -9,10 +8,8 @@
 
 #include <SPI.h>
 #include <RF24.h>
-#include <dht11.h>
 
 #define DEV_ID 1
-#define PIN_DHT11 8
 #define PIN_CURRENT_SENSOR A0
 #define PIN_VOLTAGE_SENSOR A1
 #define CURRENT_SENSOR_RATIO 0.067
@@ -32,7 +29,6 @@ typedef struct {
   int watt; /* 1/10W */
 } DATA_BLOCK;
 
-dht11 DHT;
 DATA_BLOCK data = {DEV_ID};
 
 void sensePower(float& amp, float& volt, float& watt, unsigned int duration)
@@ -54,6 +50,7 @@ void sensePower(float& amp, float& volt, float& watt, unsigned int duration)
 }
 
 void setup() {
+  // we are going to measure very low input voltage
   analogReference(INTERNAL);
 
   radio.begin();
@@ -70,15 +67,13 @@ void setup() {
 void loop() {
   float amp = 0, volt = 240, watt = 0;
   sensePower(amp, volt, watt, 1000);
+  
+  // fill up data block for transmission
   data.time = millis();
   data.current = amp * 100;
   data.voltage = volt * 100;
   data.watt = watt * 10;
- 
-  if (DHT.read(PIN_DHT11) == DHTLIB_OK) {
-    data.temperature = (int)(DHT.temperature * 10);
-    data.humidity = (int)(DHT.humidity * 10);
-  }
 
+  // send data block
   radio.write( &data, sizeof(data));
 }
