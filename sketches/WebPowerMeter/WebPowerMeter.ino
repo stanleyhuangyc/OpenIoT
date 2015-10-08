@@ -1,7 +1,7 @@
 
 /*
 * This sketch measures AC current with SCT-013 CT sensor
-* connected directly to A0 of ESP8266 and shows
+* connected directly to ADC of ESP8266 and shows
 * realtime power consumption on web-based gauge
 *
 * Written by Stanley Huang
