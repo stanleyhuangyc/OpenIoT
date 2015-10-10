@@ -61,16 +61,6 @@ float getVoltage()
 }
 
 void setup() {
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
-  // start when voltage above requirement
-  for (;;) {
-    float v = getVoltage();
-    if (v >= START_VOLTAGE) break;
-    delay(2000);
-  }
-  digitalWrite(13, LOW);
-
   radio.begin();
 
   // Set the PA Level low to prevent power supply related issues since this is a
