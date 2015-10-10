@@ -7,24 +7,49 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <MultiLCD.h>
+#include <RF24.h>
+
+/* Hardware configuration: Set up nRF24L01 radio on SPI bus plus pins 9 & 10 */
+RF24 radio(9,10);
+byte addresses[][6] = {"SNDER","RCVER"};
 
 LCD_ILI9341 lcd;
 
-#define PIN_CURRENT_SENSOR A2
-#define PV_INPUTS 6
-#define CURRENT_SENSOR_RATIO 0.067
+#define PIN_CURRENT_SENSOR A3
+#define PIN_VOLTAGE_SENSOR A2
+#define CURRENT_SENSOR_RATIO 0.33
+#define VOLTAGE_SENSOR_RATIO 664
 
-float amp = 0; /* A */
-uint16_t voltage = 240; /* V (voltage isn't measured yet) */
-float watt = 0;
-float wh = 0; /* watt hour */
+#define CHANNELS 5
+#define LOCAL_CHANNEL 0
 
-// fake PV data (will implement wireless sensoring of PV output)
-float pvv[PV_INPUTS] = {28.9, 27.5, 28.1, 26.9};
-float pva[PV_INPUTS] = {1.5, 2.1, 3.1, 2.9};
-int pvt[PV_INPUTS] = {35, 34, 36, 35};
-int pvh[PV_INPUTS] = {66, 67, 65, 64};
-uint16_t pvs[PV_INPUTS] = {0};
+typedef struct {
+  byte id;
+  unsigned long time;
+  int temperature; /* 0.1C */
+  unsigned int humidity; /* 0.1% */
+  unsigned int voltage; /* 1/100V */
+  int current; /* 1/100A */
+  unsigned int watt; /* 0W */
+} DATA_BLOCK;
+
+typedef struct {
+  const char* caption;
+  DATA_BLOCK data;
+  float wh; /* calculated watt hour */
+  uint32_t lastTime;
+} METER_INFO;
+
+METER_INFO meters[CHANNELS] = {
+  {"Solar Main"},
+  {"Home Main AC"},
+  {"Solar 500W"},
+  {"Solar Panel 1"},
+  {"Solar Panel 2"}
+};
+
+byte channel = 0;
+bool reinit = false;
 
 typedef struct {
   uint16_t left;
@@ -36,7 +61,7 @@ typedef struct {
 
 void chartUpdate(CHART_DATA* chart, unsigned int value);
 
-CHART_DATA chartPower = {24, 319, 239, 100, 24};
+CHART_DATA chartPower = {24, 319, 239, 100};
 
 void chartUpdate(CHART_DATA* chart, unsigned int value)
 {
@@ -55,34 +80,32 @@ void initScreen()
 {
     lcd.clear();
     lcd.setBackLight(255);
-    lcd.setFontSize(FONT_SIZE_MEDIUM);
-    lcd.setColor(RGB16_CYAN);
-    lcd.setCursor(20, 0);
-    lcd.print("POWER");
-    lcd.setCursor(120, 0);
-    lcd.print("ENERGY");
-    lcd.setCursor(20, 8);
-    lcd.print("VOLTAGE");
-    lcd.setCursor(120, 8);
-    lcd.print("CURRENT");
 
     lcd.setFontSize(FONT_SIZE_SMALL);
-    for (byte n = 0; n < PV_INPUTS; n++) {
-      lcd.setCursor(228, n * 3);
-      lcd.print("PV");
-      lcd.print(n);
-      lcd.print(':');
-    }
+    lcd.setColor(RGB16_YELLOW);
+    lcd.print(channel);
+    lcd.print("# ");
+    lcd.print(meters[channel].caption);
 
     lcd.setFontSize(FONT_SIZE_MEDIUM);
+    lcd.setColor(RGB16_CYAN);
+    lcd.setCursor(20, 2);
+    lcd.print("POWER");
+    lcd.setCursor(120, 2);
+    lcd.print("ENERGY");
+    lcd.setCursor(20, 10);
+    lcd.print("VOLTAGE");
+    lcd.setCursor(120, 10);
+    lcd.print("CURRENT");
+
     lcd.setColor(RGB16_YELLOW);
-    lcd.setCursor(70, 4);
+    lcd.setCursor(70, 6);
     lcd.print("W");
-    lcd.setCursor(180, 4);
+    lcd.setCursor(180, 6);
     lcd.print("Wh");
-    lcd.setCursor(70, 12);
+    lcd.setCursor(70, 14);
     lcd.print("V");
-    lcd.setCursor(164, 12);
+    lcd.setCursor(164, 14);
     lcd.print("A");
 
     lcd.setFontSize(FONT_SIZE_SMALL);    
@@ -95,74 +118,88 @@ void initScreen()
     lcd.print("0kW");
 
     lcd.setColor(RGB16_WHITE);
+    
+    chartPower.pos = chartPower.left;
 }
 
 void updateMeterDisplay()
 {
-  lcd.setFontSize(FONT_SIZE_XLARGE);
-  lcd.setColor(RGB16_WHITE);
-  lcd.setCursor(0, 3);
-  lcd.printInt(watt, 4);
-  lcd.setCursor(110, 3);
-  lcd.printInt(wh, 4);
-  lcd.setCursor(0, 11);
-  lcd.printInt(voltage, 4);
-  lcd.setCursor(110, 11);
-  int a = (int)(amp * 10);
-  lcd.printInt(a / 10, 2);
+  DATA_BLOCK* data = &meters[channel].data;
   lcd.setFontSize(FONT_SIZE_SMALL);
-  lcd.write('\n');
-  lcd.setFontSize(FONT_SIZE_MEDIUM);
-  lcd.write('.');
-  lcd.printInt(a % 10);
+  lcd.setColor(RGB16_WHITE);
+  lcd.setCursor(100, 0);
+  
+  uint32_t s = data->time / 1000;
+  if (s >= 3600) {
+    lcd.print(s / 3600);
+    lcd.print(':');
+    s %= 3600;
+  }
+  byte m = s / 100;
+  s %= 60;
+  lcd.setFlags(FLAG_PAD_ZERO);
+  lcd.printInt(m, 2);
+  lcd.print(':');
+  lcd.printInt(s, 2);
+  lcd.print(' ');
+        
+  lcd.print(data->temperature / 10);
+  lcd.print("C ");
+  lcd.print(data->humidity / 10);
+  lcd.print("% ");
+
+  lcd.setFontSize(FONT_SIZE_XLARGE);
+  lcd.setFlags(0);
+  lcd.setCursor(0, 5);
+  lcd.printInt(data->watt, 4);
+  lcd.setCursor(110, 5);
+  if (meters[channel] >= 10000) {
+    lcd.setCursor(180, 6);
+    lcd.print("Wh");
+  }
+  lcd.printInt((unsigned int)meters[channel].wh, 4);
+  lcd.setCursor(0, 13);
+  lcd.printInt(data->voltage / 100, 4);
+  lcd.setCursor(110, 13);
+  unsigned int a = data->current / 10;
+  if (a >= 1000) {
+    if (a >= 10000) a %= 10000;
+    lcd.printInt(a / 10, 3);
+  } else {
+    lcd.printInt(a / 10, 2);
+    lcd.setFontSize(FONT_SIZE_SMALL);
+    lcd.write('\n');
+    lcd.setFontSize(FONT_SIZE_MEDIUM);
+    lcd.write('.');
+    lcd.printInt(a % 10);
+  }
    
   lcd.setFontSize(FONT_SIZE_SMALL);
   lcd.setFlags(FLAG_PAD_ZERO);
-  for (byte n = 0; n < PV_INPUTS; n++) {
+  for (byte n = 0, ln = 0; n < CHANNELS; n++) {
+    if (channel == n) continue;
+    data = &meters[n].data;
+    lcd.setColor(RGB16_YELLOW);
+    lcd.setCursor(220, ln);
+    lcd.print((int)n);
+    lcd.print("# ");
     lcd.setColor(RGB16_WHITE);
-    lcd.setCursor(252, n * 3);
-    lcd.print(pvv[n], 1);
+    lcd.print((float)data->voltage / 100, 1);
     lcd.print("V ");
-    lcd.print(pva[n], 1);
+    lcd.print((float)data->current / 100, 1);
     lcd.print("A ");
     lcd.setColor(RGB16(160, 160, 160));
-    lcd.setCursor(252, n * 3 + 1);
-    lcd.print((int)(pvv[n] * pva[n]));
+    lcd.setCursor(220, ln + 1);
+    lcd.print(data->watt);
     lcd.print("W ");
-    lcd.print(pvt[n]);
+    lcd.print(data->temperature / 10);
     lcd.print("C ");
-    lcd.print(pvh[n]);
+    lcd.print(data->humidity / 10);
     lcd.print("% ");
-    lcd.setColor(RGB16(92, 92, 92));
-    lcd.setCursor(252, n * 3 + 2);
-    lcd.printInt(pvs[n] / 60, 2);
-    lcd.print(':');
-    lcd.printInt(pvs[n] % 60, 2);
+    ln += 3;
   }
   lcd.setFlags(0);
-  chartUpdate(&chartPower, watt / 20);
-}
-
-void serialOutput()
-{
-  if (watt >= 1000) {
-    Serial.print(watt / 1000, 1);
-    Serial.print("kW ");
-  } else {
-    Serial.print((int)watt);
-    Serial.print("W ");
-  }
-  if (wh >= 10000) {
-    Serial.print((unsigned int)(wh / 1000));
-    Serial.print("kWh ");
-  } else {
-    Serial.print((unsigned int)wh);
-    Serial.print("Wh ");
-  }
-  Serial.print((unsigned int)voltage);
-  Serial.print("V ");
-  Serial.print(amp, 1);
-  Serial.print("A");
+  chartUpdate(&chartPower, meters[channel].data.watt / 20);
 }
 
 void setup() {
@@ -170,38 +207,114 @@ void setup() {
   // as we are going to measure very small voltage
   analogReference(INTERNAL);
 
+  radio.begin();
+
+  // Set the PA Level low to prevent power supply related issues since this is a
+ // getting_started sketch, and the likelihood of close proximity of the devices. RF24_PA_MAX is default.
+  radio.setPALevel(RF24_PA_MAX);
+  
+  // Open a writing and reading pipe on each radio, with opposite addresses
+  radio.openWritingPipe(addresses[1]);
+  radio.openReadingPipe(1,addresses[0]);
+  
+  // Start the radio listening for data
+  radio.startListening();
+
   // initialize LCD module
   lcd.begin();
+  
+  pinMode(8, INPUT_PULLUP);
+  
   // illustrate UI
   initScreen();
-  
+
   Serial.begin(115200);
-}
-
-void calculate()
-{
-  static uint32_t lastTime = 0;
   
-  uint32_t t = millis();
-  wh += watt * (t - lastTime) / 3600000;
-  lastTime = t;
-  for (byte n = 0; n < 4; n++) {
-    pvs[n] = millis() / 1000;
+  delay(500);
+}
+
+void receiveRemoteSensors()
+{
+  if( radio.available()){
+    while (radio.available()) {                                   // While there is data ready
+      DATA_BLOCK data = {0};
+      radio.read( &data, sizeof(data));
+      if (data.id > 0 && data.id < CHANNELS) {
+        memcpy(&meters[data.id].data, &data, sizeof(DATA_BLOCK));
+        if (meters[data.id].lastTime) {
+          meters[data.id].wh  += (float)data.watt * (data.time - meters[data.id].lastTime) / 3600000;
+        }
+        meters[data.id].lastTime = data.time;
+      }
+      Serial.print('[');
+      Serial.print(data.id);
+      Serial.print(']');
+      uint32_t s = data.time / 1000;
+      if (s >= 3600) {
+        Serial.print(s / 3600);
+        Serial.print(':');
+        s %= 3600;
+      }
+      int m = s / 60;
+      s %= 60;
+      if (m < 10) Serial.print('0');
+      Serial.print(m);
+      Serial.print(':');
+      if (s < 10) Serial.print('0');
+      Serial.print(s);
+      if (data.voltage || data.current) {
+        Serial.print(' ');
+        if (data.watt) {
+          Serial.print(data.watt);
+          Serial.print("W ");
+        }
+        Serial.print((float)data.current / 100, 2);
+        Serial.print("A ");
+        Serial.print((float)data.voltage / 100, 1);
+        Serial.print("V ");
+      }
+      Serial.println();
+    }
   }
 }
 
-void sensorPower()
+bool checkButton()
 {
-  uint32_t an = 0;
-  float pn = 0;
-  for (int m = 0; m < 1000; m++) {
-    int a = analogRead(PIN_CURRENT_SENSOR);
-    an += (uint32_t)a * a;
-    pn += (a * CURRENT_SENSOR_RATIO) * voltage;
-    delay(1);
+  if (digitalRead(8) == LOW) {  
+    channel = (channel + 1) % CHANNELS;
+    reinit = true;
+    return true;
+  } else {
+    return false;
   }
-  amp = sqrt((float)an / 500) * CURRENT_SENSOR_RATIO;
-  watt = amp <= 0.05 ? 0 : pn / 500;
+}
+
+void readLocalSensor(byte mychannel, unsigned int interval)
+{
+  DATA_BLOCK* data = &meters[mychannel].data;
+  uint32_t an = 0;
+  uint32_t vn = 0;
+  float pn = 0;
+  uint32_t n;
+  uint32_t t = millis();
+  for (n = 0; millis() - t < interval && !checkButton(); n++) {
+    int a = analogRead(PIN_CURRENT_SENSOR);
+    //int v = analogRead(PIN_VOLTAGE_SENSOR);
+    an += (uint32_t)a * a;
+    //vn += (uint32_t)v * v;
+    pn += ((float)a * CURRENT_SENSOR_RATIO) * data->voltage;
+    receiveRemoteSensors();
+  }
+  n /= 2;
+  data->current = sqrt((float)an / n) * CURRENT_SENSOR_RATIO * 100;
+  //meters[0].voltage = sqrt((float)vn / 1000) * CURRENT_SENSOR_RATIO * 100;
+  data->watt = data->current <= 5 ? 0 : pn / n;
+  
+  // calculations
+  t = millis();
+  meters[mychannel].data.time = t;
+  meters[mychannel].wh += pn / n * (t - meters[mychannel].lastTime) / 3600000;
+  meters[mychannel].lastTime = t;
 }
 
 void loop() {
@@ -209,20 +322,15 @@ void loop() {
   static uint32_t lastTime = 0;
   if (millis() - lastTime > 1000) {
     updateMeterDisplay();
-    serialOutput();
+    //serialOutput();
     lastTime = millis();
   }
-  if (Serial.available()) {
-     // fake data adjuster
-     char c = Serial.read();
-     if (c == ',') {
-       amp -= 0.1;
-       watt -= voltage / 10;
-     } else if (c == '.') {
-       amp += 0.1;
-       watt += voltage / 10;
-     }
+
+  readLocalSensor(LOCAL_CHANNEL, 500);
+  receiveRemoteSensors();
+  
+  if (reinit) {
+    initScreen();
+    reinit =false;   
   }
-  sensorPower();
-  calculate();
 }
