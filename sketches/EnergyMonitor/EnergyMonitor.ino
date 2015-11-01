@@ -15,12 +15,14 @@ byte addresses[][6] = {"SNDER","RCVER"};
 
 LCD_ILI9341 lcd;
 
-#define PIN_CURRENT_SENSOR A3
-#define PIN_VOLTAGE_SENSOR A2
+#define PIN_CURRENT_SENSOR A0
+#define PIN_AMBIENT_SENSOR A4
+#define PIN_RELAY A2
 #define CURRENT_SENSOR_RATIO 0.33
-#define VOLTAGE_SENSOR_RATIO 664
+#define AMBIENT_SWITCH_OFF 200
+#define AMBIENT_SWITCH_ON 400
 
-#define CHANNELS 5
+#define CHANNELS 6
 #define LOCAL_CHANNEL 0
 
 typedef struct {
@@ -30,7 +32,7 @@ typedef struct {
   unsigned int humidity; /* 0.1% */
   unsigned int voltage; /* 1/100V */
   int current; /* 1/100A */
-  unsigned int watt; /* 0W */
+  unsigned int watt; /* W */
 } DATA_BLOCK;
 
 typedef struct {
@@ -41,15 +43,18 @@ typedef struct {
 } METER_INFO;
 
 METER_INFO meters[CHANNELS] = {
-  {"Solar Main"},
+  {"Solar Inverter"},
   {"Home Main AC"},
-  {"Solar 500W"},
   {"Solar Panel 1"},
-  {"Solar Panel 2"}
+  {"Solar Panel 2"},
+  {"Solar Panel 3"},
+  {"Solar Panel 4"},
 };
 
 byte channel = 0;
 bool reinit = false;
+int ambientLight = 0;
+bool relayState = true;
 
 typedef struct {
   uint16_t left;
@@ -127,7 +132,7 @@ void updateMeterDisplay()
   DATA_BLOCK* data = &meters[channel].data;
   lcd.setFontSize(FONT_SIZE_SMALL);
   lcd.setColor(RGB16_WHITE);
-  lcd.setCursor(100, 0);
+  lcd.setCursor(112, 0);
   
   uint32_t s = data->time / 1000;
   if (s >= 3600) {
@@ -143,21 +148,25 @@ void updateMeterDisplay()
   lcd.printInt(s, 2);
   lcd.print(' ');
         
+  /*
   lcd.print(data->temperature / 10);
   lcd.print("C ");
   lcd.print(data->humidity / 10);
   lcd.print("% ");
+  */
 
   lcd.setFontSize(FONT_SIZE_XLARGE);
   lcd.setFlags(0);
   lcd.setCursor(0, 5);
   lcd.printInt(data->watt, 4);
   lcd.setCursor(110, 5);
-  if (meters[channel] >= 10000) {
+  if (meters[channel].wh >= 10000) {
     lcd.setCursor(180, 6);
-    lcd.print("Wh");
+    lcd.print("kWh");
+    lcd.printInt(meters[channel].wh / 1000, 4);
+  } else {
+    lcd.printInt(meters[channel].wh, 4);
   }
-  lcd.printInt((unsigned int)meters[channel].wh, 4);
   lcd.setCursor(0, 13);
   lcd.printInt(data->voltage / 100, 4);
   lcd.setCursor(110, 13);
@@ -174,12 +183,12 @@ void updateMeterDisplay()
     lcd.printInt(a % 10);
   }
    
-  lcd.setFontSize(FONT_SIZE_SMALL);
   lcd.setFlags(FLAG_PAD_ZERO);
   for (byte n = 0, ln = 0; n < CHANNELS; n++) {
     if (channel == n) continue;
     data = &meters[n].data;
     lcd.setColor(RGB16_YELLOW);
+    lcd.setFontSize(FONT_SIZE_SMALL);
     lcd.setCursor(220, ln);
     lcd.print((int)n);
     lcd.print("# ");
@@ -189,13 +198,16 @@ void updateMeterDisplay()
     lcd.print((float)data->current / 100, 1);
     lcd.print("A ");
     lcd.setColor(RGB16(160, 160, 160));
-    lcd.setCursor(220, ln + 1);
+    lcd.setCursor(238, ln + 1);
+    lcd.setFontSize(FONT_SIZE_MEDIUM);
     lcd.print(data->watt);
     lcd.print("W ");
+    /*
     lcd.print(data->temperature / 10);
     lcd.print("C ");
     lcd.print(data->humidity / 10);
     lcd.print("% ");
+    */
     ln += 3;
   }
   lcd.setFlags(0);
@@ -205,13 +217,13 @@ void updateMeterDisplay()
 void setup() {
   // set analog reference voltage to internal 1.1V
   // as we are going to measure very small voltage
-  analogReference(INTERNAL);
+  //analogReference(INTERNAL);
 
   radio.begin();
 
   // Set the PA Level low to prevent power supply related issues since this is a
  // getting_started sketch, and the likelihood of close proximity of the devices. RF24_PA_MAX is default.
-  radio.setPALevel(RF24_PA_MAX);
+  radio.setPALevel(RF24_PA_HIGH);
   
   // Open a writing and reading pipe on each radio, with opposite addresses
   radio.openWritingPipe(addresses[1]);
@@ -224,6 +236,10 @@ void setup() {
   lcd.begin();
   
   pinMode(8, INPUT_PULLUP);
+  pinMode(PIN_RELAY, OUTPUT);
+  digitalWrite(PIN_RELAY, HIGH);
+
+  meters[0].data.voltage = 24000;
   
   // illustrate UI
   initScreen();
@@ -231,6 +247,31 @@ void setup() {
   Serial.begin(115200);
   
   delay(500);
+}
+
+void serialOutput(byte channel)
+{
+      DATA_BLOCK* data = &meters[channel].data;
+      Serial.print('[');
+      Serial.print(data->id);
+      Serial.print(']');
+      uint32_t s = data->time / 1000;
+      Serial.print(s);
+      if (data->voltage || data->current) {
+        Serial.print(' ');
+        if (data->watt) {
+          Serial.print(data->watt);
+          Serial.print("W ");
+        }
+        Serial.print((float)data->current / 100, 2);
+        Serial.print("A ");
+        /*
+        Serial.print((float)data->voltage / 100, 1);
+        Serial.print("V ");
+        */
+        Serial.print(ambientLight);
+      }
+      Serial.println();
 }
 
 void receiveRemoteSensors()
@@ -245,35 +286,8 @@ void receiveRemoteSensors()
           meters[data.id].wh  += (float)data.watt * (data.time - meters[data.id].lastTime) / 3600000;
         }
         meters[data.id].lastTime = data.time;
+        serialOutput(data.id);
       }
-      Serial.print('[');
-      Serial.print(data.id);
-      Serial.print(']');
-      uint32_t s = data.time / 1000;
-      if (s >= 3600) {
-        Serial.print(s / 3600);
-        Serial.print(':');
-        s %= 3600;
-      }
-      int m = s / 60;
-      s %= 60;
-      if (m < 10) Serial.print('0');
-      Serial.print(m);
-      Serial.print(':');
-      if (s < 10) Serial.print('0');
-      Serial.print(s);
-      if (data.voltage || data.current) {
-        Serial.print(' ');
-        if (data.watt) {
-          Serial.print(data.watt);
-          Serial.print("W ");
-        }
-        Serial.print((float)data.current / 100, 2);
-        Serial.print("A ");
-        Serial.print((float)data.voltage / 100, 1);
-        Serial.print("V ");
-      }
-      Serial.println();
     }
   }
 }
@@ -289,27 +303,37 @@ bool checkButton()
   }
 }
 
+#define ACS712_ZERO_VOL 2.493 //2.495V. Set the macro value of the voltage output
+                         //of the ACS712 when the measured current is zero.
+#define ACS712_SENSITIVITY 0.185 //0.185mV is typical value
+#define ADC_RESOLUTION  (float)5/1024 // 5/1024 is eaque 0.0049V per unit
+
+float getCurrent(byte pin)
+{
+    return ((float)analogRead(pin)*ADC_RESOLUTION - ACS712_ZERO_VOL)/ACS712_SENSITIVITY;
+}
+
 void readLocalSensor(byte mychannel, unsigned int interval)
 {
   DATA_BLOCK* data = &meters[mychannel].data;
-  uint32_t an = 0;
-  uint32_t vn = 0;
+  float an = 0;
+  float vn = 0;
   float pn = 0;
   uint32_t n;
   uint32_t t = millis();
   for (n = 0; millis() - t < interval && !checkButton(); n++) {
-    int a = analogRead(PIN_CURRENT_SENSOR);
+    float a = getCurrent(PIN_CURRENT_SENSOR);
     //int v = analogRead(PIN_VOLTAGE_SENSOR);
-    an += (uint32_t)a * a;
+    an += a * a;
     //vn += (uint32_t)v * v;
-    pn += ((float)a * CURRENT_SENSOR_RATIO) * data->voltage;
+    pn += a * data->voltage / 100;
     receiveRemoteSensors();
   }
   n /= 2;
-  data->current = sqrt((float)an / n) * CURRENT_SENSOR_RATIO * 100;
+  data->current = sqrt((float)an / n) * 100;
   //meters[0].voltage = sqrt((float)vn / 1000) * CURRENT_SENSOR_RATIO * 100;
-  data->watt = data->current <= 5 ? 0 : pn / n;
-  
+  data->watt = pn / n;
+    
   // calculations
   t = millis();
   meters[mychannel].data.time = t;
@@ -320,17 +344,42 @@ void readLocalSensor(byte mychannel, unsigned int interval)
 void loop() {
   // put your main code here, to run repeatedly:
   static uint32_t lastTime = 0;
-  if (millis() - lastTime > 1000) {
-    updateMeterDisplay();
-    //serialOutput();
-    lastTime = millis();
-  }
 
   readLocalSensor(LOCAL_CHANNEL, 500);
   receiveRemoteSensors();
+
+  if (millis() - lastTime > 1000) {
+    updateMeterDisplay();
+    serialOutput(LOCAL_CHANNEL);
+    lastTime = millis();
+    
+    // controls
+    ambientLight = analogRead(PIN_AMBIENT_SENSOR);
+    if (relayState && ambientLight < AMBIENT_SWITCH_OFF) {
+      digitalWrite(PIN_RELAY, LOW);
+      relayState = false; 
+    } else if (!relayState && ambientLight > AMBIENT_SWITCH_ON) {
+      digitalWrite(PIN_RELAY, HIGH);
+      relayState = true; 
+    }
+  }
   
   if (reinit) {
     initScreen();
-    reinit =false;   
+    reinit = false;   
+  }
+  
+  if (Serial.available()) {
+    char c = Serial.read();
+    switch (c) {
+    case '0':
+      digitalWrite(PIN_RELAY, LOW);
+      relayState = false;
+      break;
+    case '1':
+      digitalWrite(PIN_RELAY, HIGH);
+      relayState = true;
+      break;
+    }
   }
 }
