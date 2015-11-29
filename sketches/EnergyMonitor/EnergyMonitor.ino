@@ -19,8 +19,8 @@ LCD_ILI9341 lcd;
 #define PIN_AMBIENT_SENSOR A4
 #define PIN_RELAY A2
 #define CURRENT_SENSOR_RATIO 0.33
-#define AMBIENT_SWITCH_OFF 200
-#define AMBIENT_SWITCH_ON 400
+#define AMBIENT_SWITCH_OFF 300
+#define AMBIENT_SWITCH_ON 600
 
 #define CHANNELS 6
 #define LOCAL_CHANNEL 0
@@ -161,9 +161,9 @@ void updateMeterDisplay()
   lcd.printInt(data->watt, 4);
   lcd.setCursor(110, 5);
   if (meters[channel].wh >= 10000) {
+    lcd.printInt(meters[channel].wh / 1000, 4);
     lcd.setCursor(180, 6);
     lcd.print("kWh");
-    lcd.printInt(meters[channel].wh / 1000, 4);
   } else {
     lcd.printInt(meters[channel].wh, 4);
   }
@@ -269,7 +269,6 @@ void serialOutput(byte channel)
         Serial.print((float)data->voltage / 100, 1);
         Serial.print("V ");
         */
-        Serial.print(ambientLight);
       }
       Serial.println();
 }
@@ -303,14 +302,14 @@ bool checkButton()
   }
 }
 
-#define ACS712_ZERO_VOL 2.493 //2.495V. Set the macro value of the voltage output
-                         //of the ACS712 when the measured current is zero.
 #define ACS712_SENSITIVITY 0.185 //0.185mV is typical value
 #define ADC_RESOLUTION  (float)5/1024 // 5/1024 is eaque 0.0049V per unit
 
+int acsZeroRef = 512;
+
 float getCurrent(byte pin)
 {
-    return ((float)analogRead(pin)*ADC_RESOLUTION - ACS712_ZERO_VOL)/ACS712_SENSITIVITY;
+    return (float)(analogRead(pin) - acsZeroRef) * ADC_RESOLUTION /ACS712_SENSITIVITY * 2;
 }
 
 void readLocalSensor(byte mychannel, unsigned int interval)
@@ -326,14 +325,12 @@ void readLocalSensor(byte mychannel, unsigned int interval)
     //int v = analogRead(PIN_VOLTAGE_SENSOR);
     an += a * a;
     //vn += (uint32_t)v * v;
-    pn += a * data->voltage / 100;
+    pn += (a >= 0 ? a : -a) * data->voltage / 100;
     receiveRemoteSensors();
   }
-  n /= 2;
   data->current = sqrt((float)an / n) * 100;
   //meters[0].voltage = sqrt((float)vn / 1000) * CURRENT_SENSOR_RATIO * 100;
   data->watt = pn / n;
-    
   // calculations
   t = millis();
   meters[mychannel].data.time = t;
@@ -348,7 +345,7 @@ void loop() {
   readLocalSensor(LOCAL_CHANNEL, 500);
   receiveRemoteSensors();
 
-  if (millis() - lastTime > 1000) {
+  if (millis() - lastTime > 3000) {
     updateMeterDisplay();
     serialOutput(LOCAL_CHANNEL);
     lastTime = millis();
@@ -357,11 +354,15 @@ void loop() {
     ambientLight = analogRead(PIN_AMBIENT_SENSOR);
     if (relayState && ambientLight < AMBIENT_SWITCH_OFF) {
       digitalWrite(PIN_RELAY, LOW);
+      lcd.setBackLight(8);
       relayState = false; 
     } else if (!relayState && ambientLight > AMBIENT_SWITCH_ON) {
       digitalWrite(PIN_RELAY, HIGH);
+      lcd.setBackLight(255);
       relayState = true; 
     }
+    Serial.print("L:");
+    Serial.println(ambientLight);
   }
   
   if (reinit) {
@@ -372,13 +373,33 @@ void loop() {
   if (Serial.available()) {
     char c = Serial.read();
     switch (c) {
-    case '0':
+    case '-':
       digitalWrite(PIN_RELAY, LOW);
       relayState = false;
       break;
-    case '1':
+    case '=':
+    case '+':
       digitalWrite(PIN_RELAY, HIGH);
       relayState = true;
+      break;
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+      channel = c - '0';
+      reinit = true;
+      break;
+    case '/':
+      Serial.print("ACS REF:");
+      acsZeroRef = 0;
+      for (byte n = 0; n < 16; n++) {
+        acsZeroRef += analogRead(PIN_CURRENT_SENSOR);
+        delay(60);
+      }
+      acsZeroRef /= 16;
+      Serial.println(acsZeroRef);
       break;
     }
   }
