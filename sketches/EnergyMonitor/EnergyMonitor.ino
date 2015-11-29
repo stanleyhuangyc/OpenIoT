@@ -15,15 +15,18 @@ byte addresses[][6] = {"SNDER","RCVER"};
 
 LCD_ILI9341 lcd;
 
-#define PIN_CURRENT_SENSOR A0
-#define PIN_AMBIENT_SENSOR A4
+#define PIN_AC_CURRENT A0
+//#define PIN_AC_VOLTAGE A1
+#define PIN_DC_VOLTAGE A3
+#define PIN_DC_CURRENT A4
+//#define PIN_AMBIENT_SENSOR A4
 #define PIN_RELAY A2
-#define CURRENT_SENSOR_RATIO 0.33
 #define AMBIENT_SWITCH_OFF 300
 #define AMBIENT_SWITCH_ON 600
 
 #define CHANNELS 6
-#define LOCAL_CHANNEL 0
+#define LOCAL_AC_CHANNEL 0
+#define LOCAL_DC_CHANNEL 2
 
 typedef struct {
   byte id;
@@ -53,7 +56,9 @@ METER_INFO meters[CHANNELS] = {
 
 byte channel = 0;
 bool reinit = false;
+#ifdef PIN_AMBIENT_SENSOR
 int ambientLight = 0;
+#endif
 bool relayState = true;
 
 typedef struct {
@@ -245,30 +250,29 @@ void setup() {
   initScreen();
 
   Serial.begin(115200);
-  
-  delay(500);
 }
 
 void serialOutput(byte channel)
 {
       DATA_BLOCK* data = &meters[channel].data;
-      Serial.print('[');
-      Serial.print(data->id);
-      Serial.print(']');
-      uint32_t s = data->time / 1000;
-      Serial.print(s);
+      Serial.print('#');
+      Serial.print(channel);
+      Serial.print(' ');
+      //uint32_t s = data->time / 1000;
+      //Serial.print(s);
       if (data->voltage || data->current) {
-        Serial.print(' ');
-        if (data->watt) {
-          Serial.print(data->watt);
-          Serial.print("W ");
-        }
-        Serial.print((float)data->current / 100, 2);
+        Serial.print(data->watt);
+        Serial.print("W ");
+        if (data->current < 1)
+          Serial.print((float)data->current / 100, 1);
+        else
+          Serial.print((float)data->current / 100, 2);
         Serial.print("A ");
-        /*
-        Serial.print((float)data->voltage / 100, 1);
-        Serial.print("V ");
-        */
+        if (data->voltage >= 10000)
+          Serial.print(data->voltage / 100);
+        else
+          Serial.print((float)data->voltage / 100, 1);
+        Serial.print("V");
       }
       Serial.println();
 }
@@ -312,49 +316,73 @@ float getCurrent(byte pin)
     return (float)(analogRead(pin) - acsZeroRef) * ADC_RESOLUTION /ACS712_SENSITIVITY * 2;
 }
 
-void readLocalSensor(byte mychannel, unsigned int interval)
+void readLocalSensor(byte chAC, byte chDC, unsigned int interval)
 {
-  DATA_BLOCK* data = &meters[mychannel].data;
+  DATA_BLOCK* acdt = &meters[chAC].data;
+  DATA_BLOCK* dcdt = &meters[chDC].data;
   float an = 0;
   float vn = 0;
   float pn = 0;
   uint32_t n;
+  uint32_t dca = 0;
+  uint32_t dcv = 0;
+  
   uint32_t t = millis();
   for (n = 0; millis() - t < interval && !checkButton(); n++) {
-    float a = getCurrent(PIN_CURRENT_SENSOR);
-    //int v = analogRead(PIN_VOLTAGE_SENSOR);
+    // measure AC
+    float a = getCurrent(PIN_AC_CURRENT);
+    //int v = analogRead(PIN_AC_VOLTAGE);
     an += a * a;
     //vn += (uint32_t)v * v;
-    pn += (a >= 0 ? a : -a) * data->voltage / 100;
+    pn += (a >= 0 ? a : -a) * acdt->voltage / 100;
+    // measure DC
+    dca += analogRead(PIN_DC_CURRENT);
+    dcv += analogRead(PIN_DC_VOLTAGE);
+    // receive remote data
     receiveRemoteSensors();
   }
-  data->current = sqrt((float)an / n) * 100;
-  //meters[0].voltage = sqrt((float)vn / 1000) * CURRENT_SENSOR_RATIO * 100;
-  data->watt = pn / n;
-  // calculations
   t = millis();
-  meters[mychannel].data.time = t;
-  meters[mychannel].wh += pn / n * (t - meters[mychannel].lastTime) / 3600000;
-  meters[mychannel].lastTime = t;
+  // calculation for AC
+  acdt->current = sqrt((float)an / n) * 100;
+  acdt->watt = pn / n;
+  acdt->time = t;
+  meters[chAC].wh += pn / n * (t - meters[chAC].lastTime) / 3600000;
+  meters[chAC].lastTime = t;
+  // calculation for DC
+  dcdt->current = dca * 498 / 1023 / n;
+  dcdt->voltage = dcv * 498 * 5 / 1023 / n;
+  dcdt->watt = (uint32_t)dcdt->current * dcdt->voltage / 10000;
+  dcdt->time = t;
+  meters[chDC].wh += (float)dcdt->current * dcdt->voltage / 10000 * (t - meters[chDC].lastTime) / 3600000;
+  meters[chDC].lastTime = t;
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   static uint32_t lastTime = 0;
+  static byte rnd = 0;
 
-  readLocalSensor(LOCAL_CHANNEL, 500);
+  readLocalSensor(LOCAL_AC_CHANNEL, LOCAL_DC_CHANNEL, 500);
   receiveRemoteSensors();
 
   if (millis() - lastTime > 3000) {
     updateMeterDisplay();
-    serialOutput(LOCAL_CHANNEL);
+    switch (rnd = ((rnd + 1) % 2)) {
+    case 0:
+      serialOutput(LOCAL_AC_CHANNEL);
+      break;
+    case 1:
+      serialOutput(LOCAL_DC_CHANNEL);
+      break;
+    }
     lastTime = millis();
     
     // controls
+#ifdef PIN_AMBIENT_SENSOR
     ambientLight = analogRead(PIN_AMBIENT_SENSOR);
     if (relayState && ambientLight < AMBIENT_SWITCH_OFF) {
       digitalWrite(PIN_RELAY, LOW);
-      lcd.setBackLight(8);
+      lcd.setBackLight(0);
       relayState = false; 
     } else if (!relayState && ambientLight > AMBIENT_SWITCH_ON) {
       digitalWrite(PIN_RELAY, HIGH);
@@ -363,6 +391,16 @@ void loop() {
     }
     Serial.print("L:");
     Serial.println(ambientLight);
+#else
+    // control relay with solar panel voltage
+    if (meters[LOCAL_DC_CHANNEL].data.voltage < 12) {
+      digitalWrite(PIN_RELAY, LOW);
+      lcd.setBackLight(0);
+    } else {
+      digitalWrite(PIN_RELAY, HIGH); 
+      lcd.setBackLight(255);
+    }
+#endif
   }
   
   if (reinit) {
@@ -392,10 +430,11 @@ void loop() {
       reinit = true;
       break;
     case '/':
+      // calibrate current sensor
       Serial.print("ACS REF:");
       acsZeroRef = 0;
       for (byte n = 0; n < 16; n++) {
-        acsZeroRef += analogRead(PIN_CURRENT_SENSOR);
+        acsZeroRef += analogRead(PIN_AC_CURRENT);
         delay(60);
       }
       acsZeroRef /= 16;
